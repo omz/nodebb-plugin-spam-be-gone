@@ -7,6 +7,7 @@ var Akismet = require('akismet'),
     async = module.parent.require('async'),
     Meta = module.parent.require('./meta'),
     user = module.parent.require('./user'),
+    groups = module.parent.require('./groups'),
     topics = module.parent.require('./topics'),
     db = module.parent.require('./database'),
     akismet, honeypot, recaptchaArgs, pluginSettings,
@@ -125,22 +126,29 @@ Plugin.addCaptcha = function(data, callback) {
 Plugin.checkReply = function(data, callback) {
     // http://akismet.com/development/api/#comment-check
     if (akismet && data.req) {
-        akismet.checkSpam({
-            user_ip: data.req.ip,
-            user_agent: data.req.headers['user-agent'],
-            blog: data.req.protocol + '://' + data.req.host,
-            permalink: data.req.path,
-            comment_content: (data.title ? data.title + '\n\n' : '') + (data.content || ''),
-            comment_author: data.username
-        }, function(err, spam) {
-            if (err) {
-                winston.error(err);
-            }
-            if(spam)  {
-                winston.warn('[plugins/' + pluginData.nbbId + '] Post "' + data.content + '" by uid: ' + data.username + '@' + data.req.ip + ' was flagged as spam and rejected.');
-                callback(new Error('Post content was flagged as spam by Akismet.com'), data);
-            } else {
+        uid = data.uid;
+        groups.isMember(uid, 'spam_whitelist', function(err, isWhitelisted) {
+            if (isWhitelisted) {
                 callback(null, data);
+            } else {
+                akismet.checkSpam({
+                    user_ip: data.req.ip,
+                    user_agent: data.req.headers['user-agent'],
+                    blog: data.req.protocol + '://' + data.req.host,
+                    permalink: data.req.path,
+                    comment_content: (data.title ? data.title + '\n\n' : '') + (data.content || ''),
+                    comment_author: data.username
+                }, function(err, spam) {
+                    if (err) {
+                        winston.error(err);
+                    }
+                    if(spam)  {
+                        winston.warn('[plugins/' + pluginData.nbbId + '] Post "' + data.content + '" by uid: ' + data.username + '@' + data.req.ip + ' was flagged as spam and rejected.');
+                        callback(new Error('Post content was flagged as spam by Akismet.com'), data);
+                    } else {
+                        callback(null, data);
+                    }
+                });
             }
         });
     } else {
